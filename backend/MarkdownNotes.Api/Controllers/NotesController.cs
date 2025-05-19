@@ -135,10 +135,75 @@ namespace MarkdownNotes.Api.Controllers
             }
         }
 
+         // PUT: api/notes/{id}
+        [HttpPut("{id}")]
+        public async Task<IActionResult> PutNote(int id, NoteUpdateDto noteDto) // DTOを使用
+        {
+            // 受け取ったIDとDTOのIDがもしあれば一致しているか確認（必須ではない）
+            // if (id != noteDto.Id) // もしNoteUpdateDtoにIdプロパティを含めるなら
+            // {
+            //     return BadRequest("ID mismatch");
+            // }
+
+            if (_context.Notes == null)
+            {
+                return Problem("Entity set 'NotesDbContext.Notes' is null.");
+            }
+
+            var noteToUpdate = await _context.Notes.FindAsync(id);
+
+            if (noteToUpdate == null)
+            {
+                return NotFound($"Note with ID {id} not found.");
+            }
+
+            // DTOから受け取った値でノートのプロパティを更新
+            // null合体演算子 (??) を使って、DTOの値がnullの場合は既存の値を維持する (部分更新を許容する場合)
+            // もし常に全ての値を上書きする場合は、DTOのプロパティを必須にするか、nullチェックを厳密に行う
+            noteToUpdate.Title = noteDto.Title ?? noteToUpdate.Title;
+            noteToUpdate.MarkdownContent = noteDto.MarkdownContent ?? noteToUpdate.MarkdownContent;
+            noteToUpdate.UpdatedAt = DateTime.UtcNow; // 更新日時を現在時刻に
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // 非常に稀だが、同時に同じノートが更新/削除された場合の競合ハンドリング
+                if (!NoteExists(id)) // NoteExistsは後で定義するヘルパーメソッド
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    throw; // その他の競合エラーはそのままスロー
+                }
+            }
+
+            return NoContent(); // 成功時は 204 No Content を返すのが一般的 (レスポンスボディなし)
+                                // または return Ok(noteToUpdate); で更新後のノートを返しても良い
+        }
+
         // Lintリクエスト用のDTO
         public class LintRequestDto
         {
             public string? MarkdownText { get; set; }
+        }
+
+        // NoteUpdateDto をコントローラ内に一時的に定義 (後で別ファイルに移動推奨)
+        public class NoteUpdateDto
+        {
+            // 更新時にはIDはURLから取得するので、DTOには含めなくても良いことが多い
+            // public int Id { get; set; }
+            public string? Title { get; set; } // 更新しない場合はnullを許容
+            public string? MarkdownContent { get; set; } // 更新しない場合はnullを許容
+        }
+
+        // ヘルパーメソッド: 指定されたIDのノートが存在するか確認
+        private bool NoteExists(int id)
+        {
+            return (_context.Notes?.Any(e => e.Id == id)).GetValueOrDefault();
         }
     }
 }

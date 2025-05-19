@@ -152,3 +152,4 @@ C:\Users\Shusei9595\Documents\Roadmap_sh\02_MarkdownNotes\backend\MarkdownNotes.
 C:\Users\Shusei9595\Documents\Roadmap_sh\02_MarkdownNotes\backend\MarkdownNotes.Api\obj\Debug\net8.0\MarkdownNotes.Api.csproj.AssemblyReference.cache
 C:\Users\Shusei9595\Documents\Roadmap_sh\02_MarkdownNotes\backend\MarkdownNotes.Api\obj\Debug\net8.0\Markdown.81849BA0.Up2Date
 C:\Users\Shusei9595\Documents\Roadmap_sh\02_MarkdownNotes\backend\MarkdownNotes.Api\bin\Debug\net8.0\Markdig.dll
+C:\Users\Shusei9595\Documents\Roadmap_sh\02_MarkdownNotes\backend\MarkdownNotes.Api\obj\Debug\net8.0\MarkdownNotes.Api.sourcelink.json

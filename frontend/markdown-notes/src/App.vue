@@ -1,41 +1,138 @@
 <script setup>
-import { ref, computed } from 'vue'; // computed を追加
+import { ref, computed, onMounted, watch } from 'vue'; // computed を追加
 import { marked } from 'marked';   // marked をインポート
+import api from './services/api';
 
-// ダミーデータ（変更なし）
-const notes = ref([
-  { id: 1, title: '最初のノート', content: '# これは最初のノートです\n\nようこそ！' },
-  { id: 2, title: 'Vueについて', content: '## Vue 3\n\n- Composition API\n- Vite\n\n```javascript\nconsole.log("Hello Vue!");\n```' },
-  { id: 3, title: 'Markdown記法', content: '*太字*\n_イタリック_\n`コード`\n\n1. 番号付きリスト1\n2. 番号付きリスト2\n\n> 引用文です。' },
-]);
+// notes の初期値を空の配列に変更
+const notes = ref([]); // APIから取得したノートを格納
 
 const currentNoteContent = ref('');
-// currentPreviewHtml は computed プロパティに変更します
-
 // 選択されているノートのIDを保持（アクティブなノートを示すためなど）
 const selectedNoteId = ref(null);
+// 選択されたノートの初期のMarkdownテキスト (変更検知用)
+const originalNoteContent = ref('');
+// API通信中のローディング状態
+const isLoading = ref(false);
+// エラーメッセージ
+const errorMessage = ref('');
+
+// currentSelectedNote は、選択中のノートオブジェクト全体を保持するのに便利
+const currentSelectedNote = computed(() => {
+  return notes.value.find(note => note.id === selectedNoteId.value) || null;
+});
 
 // プレビュー用のHTMLを計算プロパティで生成
 const currentPreviewHtml = computed(() => {
   if (currentNoteContent.value) {
-    return marked(currentNoteContent.value); // markedを使ってMarkdownをHTMLに変換
+    try {
+      return marked(currentNoteContent.value);
+    } catch (e) {
+      console.error("Error in marked(): ", e);
+      return "<p>Error rendering Markdown.</p>";
+    }
   }
-  return ''; // コンテンツがなければ空文字
+  return '';
 });
 
+// エディタの内容が変更されたかどうかを判定する computed プロパティ
+const isNoteDirty = computed(() => {
+  if (!currentSelectedNote.value) return false; // ノートが選択されていなければ変更なし
+  return currentNoteContent.value !== originalNoteContent.value;
+});
+
+// ノートをAPIから取得する関数
+async function fetchNotes() {
+  isLoading.value = true;
+  errorMessage.value = '';
+  try {
+    const response = await api.getNotes();
+    notes.value = response.data; // APIからのレスポンスデータを notes にセット
+    // もしノートがあれば、最初のノートを自動的に選択する
+    if (notes.value.length > 0 && !selectedNoteId.value) {
+      // APIから返るデータ構造に合わせて content プロパティ名を調整する必要があるかもしれません
+      // バックエンドのNoteモデルは MarkdownContent という名前でした
+      // response.data の各要素が { id, title, markdownContent, createdAt, updatedAt } の形になっているか確認
+      selectNote(notes.value[0]);
+    } else {
+      // ノートがない場合はエディタとプレビューをクリア
+      currentNoteContent.value = '';
+      originalNoteContent.value = '';
+      selectedNoteId.value = null;
+    }
+  } catch (error) {
+    console.error('ノートの取得に失敗しました:', error);
+    errorMessage.value = 'ノートの取得に失敗しました。';
+  } finally {
+    isLoading.value = false;
+  }
+}
+
 function selectNote(note) {
-  currentNoteContent.value = note.content;
   selectedNoteId.value = note.id;
-  // updatePreview は不要になります (currentPreviewHtmlがリアクティブなため)
+  currentNoteContent.value = note.markdownContent || '';
+  // 選択時の内容をオリジナルとして保存
+  originalNoteContent.value = note.markdownContent || '';
 }
 
-// updatePreview 関数は不要になるので削除します
-// function updatePreview() { ... } // この関数を削除
-
-// 初期状態で最初のノートを選択（もしあれば）
-if (notes.value.length > 0) {
-  selectNote(notes.value[0]);
+// 新しいノートを追加するダミー関数 (後でAPI連携を実装)
+async function addNewNote() {
+  const newTitle = prompt("新しいノートのタイトルを入力してください:", "無題のノート");
+  if (newTitle) {
+    isLoading.value = true;
+    errorMessage.value = '';
+    try {
+      const newNoteData = { title: newTitle, markdownContent: `# ${newTitle}\n\nここに内容を記述...` };
+      const response = await api.createNote(newNoteData);
+      await fetchNotes(); // ノート作成後はリストを再取得して表示を更新
+      // 新しく作成されたノートを選択状態にする (任意)
+      const createdNote = notes.value.find(n => n.id === response.data.id);
+      if (createdNote) {
+          selectNote(createdNote);
+      }
+    } catch (error) {
+      console.error('ノートの作成に失敗しました:', error);
+      errorMessage.value = 'ノートの作成に失敗しました。';
+    } finally {
+      isLoading.value = false;
+    }
+  }
 }
+
+async function saveCurrentNote() {
+  if (!currentSelectedNote.value || !isNoteDirty.value) {
+    // 保存対象がない、または変更がない場合は何もしない
+    return;
+  }
+  isLoading.value = true;
+  errorMessage.value = '';
+  try {
+    const noteToUpdate = {
+      // バックエンドのNoteUpdateDtoに合わせて送信するデータを構築
+      title: currentSelectedNote.value.title, // タイトルは維持
+      markdownContent: currentNoteContent.value
+    };
+    await api.updateNote(currentSelectedNote.value.id, noteToUpdate);
+    originalNoteContent.value = currentNoteContent.value; // 保存したのでオリジナルを更新
+    console.log('ノートが保存されました！');
+
+    // リスト内のノートの content (markdownContent) と updatedAt も更新する
+    const index = notes.value.findIndex(n => n.id === selectedNoteId.value);
+    if (index !== -1) {
+      notes.value[index].markdownContent = currentNoteContent.value;
+      notes.value[index].updatedAt = new Date().toISOString(); // フロントで仮の更新日時
+    }
+  } catch (error) {
+    console.error('ノートの保存に失敗しました:', error);
+    errorMessage.value = 'ノートの保存に失敗しました。';
+  } finally {
+    isLoading.value = false;
+  }
+}
+
+onMounted(() => {
+  fetchNotes();
+});
+
 </script>
 
 <template>
@@ -47,6 +144,8 @@ if (notes.value.length > 0) {
     <main class="main-content">
       <aside class="sidebar-notes">
         <h2>ノート一覧</h2>
+        <div v-if="isLoading && notes.length === 0" class="loading-message">読み込み中...</div>
+        <div v-if="errorMessage && notes.length === 0" class="error-message">{{ errorMessage }}</div>
         <ul>
           <li
             v-for="note in notes"
@@ -56,26 +155,46 @@ if (notes.value.length > 0) {
             :class="{ 'active': note.id === selectedNoteId }"
           >
             {{ note.title }}
+            <span v-if="note.id === selectedNoteId && isNoteDirty" class="dirty-indicator">*</span>
+          </li>
+          <li v-if="!isLoading && notes.length === 0 && !errorMessage" class="no-notes-message">
+            ノートがありません。
           </li>
         </ul>
-        <button class="add-note-button">新しいノートを追加</button>
+        <button @click="addNewNote" class="add-note-button" :disabled="isLoading">
+          新しいノートを追加
+        </button>
       </aside>
 
       <section class="editor-area">
-        <h2>エディタ</h2>
+        <div class="editor-header">
+          <h2>エディタ</h2>
+          <button @click="saveCurrentNote" v-if="currentSelectedNote && isNoteDirty" :disabled="isLoading" class="save-button">
+            {{ isLoading ? '保存中...' : '変更を保存' }}
+          </button>
+        </div>
         <textarea
+          v-if="currentSelectedNote || currentNoteContent"
           v-model="currentNoteContent"
           placeholder="Markdownで入力してください..."
+          :disabled="isLoading"
         ></textarea>
+        <div v-if="!currentSelectedNote && notes.length > 0 && !currentNoteContent" class="no-content-message">
+          ノートを選択してください。
+        </div>
       </section>
 
       <section class="preview-area">
         <h2>プレビュー</h2>
-        <div v-html="currentPreviewHtml" class="markdown-preview"></div>
+        <div v-if="currentSelectedNote || currentNoteContent" v-html="currentPreviewHtml" class="markdown-preview"></div>
+        <div v-if="!currentSelectedNote && !currentNoteContent" class="no-content-message">
+          ノートを選択するか、新しいノートを作成してください。
+        </div>
       </section>
     </main>
 
     <footer class="app-footer">
+      <p v-if="errorMessage" class="error-message-footer">{{ errorMessage }}</p>
       <p>© 2024 あなたのMarkdownノートアプリ</p>
     </footer>
   </div>
@@ -317,6 +436,52 @@ html, body { /* ルート要素の高さを100%に */
   border: none;
   border-top: 1px solid #ddd;
   margin: 1.5em 0;
+}
+
+.loading-message, .error-message {
+  padding: 1rem;
+  text-align: center;
+  color: #6c757d;
+}
+.error-message {
+  color: red;
+}
+.error-message-footer {
+  color: red;
+  font-weight: bold;
+}
+
+.dirty-indicator {
+  color: orange;
+  font-weight: bold;
+  margin-left: 4px;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem; /* h2のデフォルトマージンと合わせるか、h2のマージンを0にする */
+}
+.editor-header h2 {
+  margin-bottom: 0; /* editor-headerでマージンを管理 */
+}
+
+.save-button {
+  padding: 0.4rem 0.8rem;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.save-button:hover {
+  background-color: #0056b3;
+}
+.save-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
 }
 
 </style>

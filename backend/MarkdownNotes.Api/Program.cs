@@ -3,6 +3,21 @@ using MarkdownNotes.Api.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// --- CORS設定を追加 ---
+var MyAllowSpecificOrigins = "_myAllowSpecificOrigins"; // ポリシー名
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(name: MyAllowSpecificOrigins,
+                      policy =>
+                      {
+                          policy.WithOrigins("http://localhost:5173") // フロントエンドのURL
+                                .AllowAnyHeader()
+                                .AllowAnyMethod();
+                      });
+});
+// --- CORS設定ここまで ---
+
 // Add services to the container.
 
 builder.Services.AddDbContext<NotesDbContext>(options =>
@@ -32,6 +47,10 @@ if (app.Environment.IsDevelopment())
         }
     }
 }
+
+// --- CORSミドルウェアを有効化 ---
+app.UseCors(MyAllowSpecificOrigins); // UseRouting の後、UseAuthorization の前あたりが良い
+// --- CORSミドルウェアここまで ---
 
 // Configure the HTTP request pipeline.
 
