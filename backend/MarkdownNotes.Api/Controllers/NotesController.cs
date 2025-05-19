@@ -185,6 +185,30 @@ namespace MarkdownNotes.Api.Controllers
                                 // または return Ok(noteToUpdate); で更新後のノートを返しても良い
         }
 
+        // DELETE: api/notes/{id}
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteNote(int id)
+        {
+            if (_context.Notes == null)
+            {
+                return Problem("Entity set 'NotesDbContext.Notes' is null.");
+            }
+
+            var note = await _context.Notes.FindAsync(id);
+            if (note == null)
+            {
+                return NotFound($"Note with ID {id} not found.");
+            }
+
+            // DbContext からノートを削除対象としてマーク
+            _context.Notes.Remove(note);
+            // データベースへの変更を保存
+            await _context.SaveChangesAsync();
+
+            // 成功時は 204 No Content を返す
+            return NoContent(); 
+        }
+
         // Lintリクエスト用のDTO
         public class LintRequestDto
         {

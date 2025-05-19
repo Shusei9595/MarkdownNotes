@@ -129,6 +129,42 @@ async function saveCurrentNote() {
   }
 }
 
+async function deleteSelectedNote() {
+  if (!currentSelectedNote.value) {
+    alert("削除するノートが選択されていません。");
+    return;
+  }
+
+  if (confirm(`本当にノート「${currentSelectedNote.value.title}」を削除しますか？この操作は元に戻せません。`)) {
+    isLoading.value = true;
+    errorMessage.value = '';
+    try {
+      await api.deleteNote(currentSelectedNote.value.id);
+      console.log(`ノート「${currentSelectedNote.value.title}」が削除されました。`);
+
+      // 削除成功後、フロントエンドの状態を更新
+      const deletedNoteId = selectedNoteId.value;
+      notes.value = notes.value.filter(note => note.id !== deletedNoteId);
+
+      // 選択状態をリセット、または次のノートを選択
+      if (notes.value.length > 0) {
+        // とりあえず最初のノートを選択
+        selectNote(notes.value[0]);
+      } else {
+        // 全てのノートが削除された場合
+        selectedNoteId.value = null;
+        currentNoteContent.value = '';
+        originalNoteContent.value = '';
+      }
+    } catch (error) {
+      console.error('ノートの削除に失敗しました:', error);
+      errorMessage.value = `ノート「${currentSelectedNote.value.title}」の削除に失敗しました。`;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+}
+
 onMounted(() => {
   fetchNotes();
 });
@@ -169,9 +205,25 @@ onMounted(() => {
       <section class="editor-area">
         <div class="editor-header">
           <h2>エディタ</h2>
-          <button @click="saveCurrentNote" v-if="currentSelectedNote && isNoteDirty" :disabled="isLoading" class="save-button">
-            {{ isLoading ? '保存中...' : '変更を保存' }}
-          </button>
+          <div>
+            <button
+                @click="saveCurrentNote"
+                v-if="currentSelectedNote && isNoteDirty"
+                :disabled="isLoading"
+                class="save-button"
+              >
+                {{ isLoading && selectedNoteId === currentSelectedNote?.id ? '保存中...' : '変更を保存' }}
+              </button>
+              <button
+                @click="deleteSelectedNote"
+                v-if="currentSelectedNote"
+                :disabled="isLoading"
+                class="delete-button"
+                title="選択中のノートを削除"
+              >
+                削除
+              </button>
+            </div>
         </div>
         <textarea
           v-if="currentSelectedNote || currentNoteContent"
@@ -466,6 +518,10 @@ html, body { /* ルート要素の高さを100%に */
 .editor-header h2 {
   margin-bottom: 0; /* editor-headerでマージンを管理 */
 }
+.editor-header div { /* ボタンをまとめるdiv用のスタイル */
+  display: flex;
+  gap: 0.5rem; /* ボタン間のスペース */
+}
 
 .save-button {
   padding: 0.4rem 0.8rem;
@@ -480,6 +536,23 @@ html, body { /* ルート要素の高さを100%に */
   background-color: #0056b3;
 }
 .save-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.delete-button {
+  padding: 0.4rem 0.8rem;
+  background-color: #dc3545; /* 赤系の背景色 */
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.delete-button:hover {
+  background-color: #c82333;
+}
+.delete-button:disabled {
   background-color: #ccc;
   cursor: not-allowed;
 }
